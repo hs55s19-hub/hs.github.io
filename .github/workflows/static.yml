@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🎰 무한 도파민: 하이퍼 스크래치 시뮬레이터 🎰</title>
+    <style>
+        :root {
+            --bg: #020205; --panel-bg: #090a14; --accent: #00ffff;
+            --singularity: linear-gradient(90deg, #ff0000, #ffff00, #00ffff, #ff00ff);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Segoe UI', sans-serif; user-select: none; }
+        body { background: var(--bg); color: #fff; display: flex; justify-content: center; align-items: center; min-height: 100vh; overflow: hidden; }
+
+        /* 화면 진동 애니메이션 정의 */
+        @keyframes shake {
+            0% { transform: translate(1px, 1px) rotate(0deg); }
+            10% { transform: translate(-1px, -2px) rotate(-1deg); }
+            30% { transform: translate(3px, 2px) rotate(0deg); }
+            50% { transform: translate(-1px, 2px) rotate(1deg); }
+            70% { transform: translate(2px, 1px) rotate(-1deg); }
+            100% { transform: translate(1px, -2px) rotate(0deg); }
+        }
+        .shockwave { animation: shake 0.4s cubic-bezier(.36,.07,.19,.97) both; loop: infinite; }
+
+        .game-container {
+            width: 100%; max-width: 480px; height: 98vh; max-height: 920px;
+            background: var(--panel-bg); border-radius: 20px; display: flex; flex-direction: column;
+            border: 2px solid #1c233a; box-shadow: 0 0 40px rgba(0, 255, 255, 0.15); position: relative;
+        }
+
+        .header { display: grid; grid-template-columns: 1.2fr 0.8fr; padding: 12px 15px; background: #05060b; border-bottom: 2px solid #1c233a; font-size: 0.85rem; font-weight: bold; }
+        .gold { color: #ffd700; font-size: 1rem; text-shadow: 0 0 10px rgba(255,215,0,0.4); }
+
+        /* 상점 스케줄러 */
+        .shop-shelf { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; padding: 8px; background: #05060b; }
+        .shop-card { background: #111526; border: 1px solid #20294a; border-radius: 8px; padding: 8px 2px; text-align: center; cursor: pointer; }
+        .shop-card.active { border-color: var(--accent); background: #171f3a; box-shadow: 0 0 12px rgba(0,255,255,0.4); }
+
+        /* 메인 복권판 및 피버 연출용 벽면 */
+        .scratch-zone { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; background: #000; padding: 15px; position: relative; }
+        .lottery-card {
+            width: 100%; max-width: 360px; height: 200px; background: #0c0e1a; border-radius: 16px;
+            position: relative; overflow: hidden; border: 3px solid #20294a; display: flex; justify-content: center; align-items: center;
+        }
+        .lottery-under { text-align: center; padding: 15px; width: 100%; }
+        .lottery-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
+
+        /* 배당금 팡파레 팝업 */
+        .payout-toast { position: absolute; top: 20%; background: rgba(0,255,255,0.9); color: #000; font-weight: 900; padding: 6px 16px; border-radius: 20px; font-size: 1.1rem; box-shadow: 0 0 20px #00ffff; display: none; z-index: 10; animation: pulse 0.3s infinite alternate; }
+
+        .stats-wrapper { width: 100%; max-height: 220px; background: #05060b; border-radius: 10px; padding: 10px; font-size: 0.72rem; overflow-y: auto; display: none; margin-top: 10px; border: 1px solid #1c233a; }
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; }
+        .stats-row { display: flex; justify-content: space-between; background: #111526; padding: 4px 6px; border-radius: 4px; }
+
+        /* 제어반 및 부스터 */
+        .control-panel { background: #05060b; padding: 10px; border-top: 2px solid #1c233a; display: flex; flex-direction: column; gap: 5px; }
+        .btn-row { display: flex; gap: 4px; }
+        .btn { flex: 1; padding: 10px 2px; border: none; border-radius: 8px; font-weight: bold; font-size: 0.75rem; cursor: pointer; text-align: center; }
+        .btn-buy { background: #00ffff; font-size: 0.8rem; font-weight: 900; }
+        .btn-auto { background: #7c3aed; color: #fff; }
+        .btn-hyper { background: linear-gradient(90deg, #ef4444, #f59e0b, #3b82f6); color: #fff; font-weight: 900; }
+        .btn-nav { background: #1c233a; color: #fff; font-size: 0.7rem; }
+
+        .toggle-active { background: #10b981 !important; color: #000 !important; font-weight: 900; }
+    </style>
+</head>
+<body>
+
+    <div class="game-container" id="mainWrapper">
+        <div class="header">
+            <div>💰 자산 계좌: <span id="coinCount" class="gold">3,000</span></div>
+            <div style="text-align: right;">🎰 소환 카운트: <span id="totalCount" style="color:var(--accent);">0</span></div>
+        </div>
+
+        <!-- 🏪 복권 마켓 라인업 -->
+        <div class="shop-shelf" id="shopShelf"></div>
+
+        <div class="scratch-zone">
+            <!-- 💸 실시간 당첨금 토스트 -->
+            <div class="payout-toast" id="payoutToast">+🪙 0!!</div>
+
+            <div class="lottery-card" id="lotteryCard">
+                <div class="lottery-under" id="cardResult">
+                    <h3 style="color:#2a3352;">상단 복권 선택 후 <br>스크래치 티켓 발급!</h3>
+                </div>
+                <canvas class="lottery-canvas" id="scratchCanvas"></canvas>
+            </div>
+
+            <div class="stats-wrapper" id="statsWrapper">
+                <div style="font-weight:bold; color:var(--accent); text-align:center; border-bottom:1px solid #1c233a; padding-bottom:4px; margin-bottom:6px;" id="statsTitle">📊 고속 분쇄 분석기</div>
+                <div id="topPrize" style="margin-bottom:6px; text-align:center; font-weight:bold;"></div>
+                <div class="stats-grid" id="statsGrid"></div>
+            </div>
+        </div>
+
+        <div class="control-panel">
+            <div class="btn-row">
+                <button class="btn btn-buy" id="b1" onclick="buyTicket(1)">1장 긁기</button>
+                <button class="btn btn-auto" id="b10" onclick="buyTicket(10)">10연속 분쇄</button>
+                <button class="btn btn-auto" style="background:#f59e0b;" id="b100" onclick="buyTicket(100)">100연속 분쇄</button>
+            </div>
+            <button class="btn btn-hyper" id="b1000" onclick="buyTicket(1000)">🚀 초공간 양자 매트릭스 1,000장 즉시 분쇄 🚀</button>
+            
+            <div class="btn-row">
+                <button class="btn btn-nav" id="speedBtn" onclick="toggleSpeed()">⚡ 배속 모드: OFF</button>
+                <button class="btn btn-nav" style="background:#10b981; color:#000;" onclick="chargeCoin()">💸 긴급 자금 수혈 (+100,000)</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const PREFIX = ["황금", "심연", "오버로드", "기적의", "카이저", "할렐루야", "피버", "잭팟", "디아블로", "크로노", "럭키"];
+        const MID = ["골드", "다이아", "복사기", "룰렛", "조커", "황제", "바알", "메가", "타이탄", "스피너"];
+        const SUFFIX = ["칩", "뱅크", "크라운", "스타", "에디션", "팩", "인자", "매트릭스", "신화", "엔드"];
+
+        const TICKETS_SHOP = [
+            { id: 0, name: "🥉 동네 푼돈복권", cost: 100, bonus: 1, color: "#9a3412" },
+            { id: 1, name: "🥈 대박 노다지", cost: 1000, bonus: 5, color: "#475569" },
+            { id: 2, name: "👑 신의 특이점", cost: 20000, bonus: 40, color: "linear-gradient(90deg, #ff007f, #00ffff)" }
+        ];
+
+        const GRADES = {
+            SINGULARITY: { name:"SINGULARITY (특이점)", color: "linear-gradient(90deg, #ff0000, #ffff00, #00ffff, #ff00ff)", mul: 5000, prob: 0.005 },
+            INFINITY: { name:"INFINITY (무한)", color: "linear-gradient(135deg, #00ffff, #ff00ff)", mul: 1000, prob: 0.02 },
+            MYTH: { name:"MYTH (신화)", color: "#f59e0b", mul: 200, prob: 0.1 },
+            ANCIENT: { name:"ANCIENT (고대)", color: "#ef4444", mul: 50, prob: 0.5 },
+            SSR: { name:"SSR (전설)", color: "#ffd700", mul: 15, prob: 2.0 },
+            SR: { name:"SR (영웅)", color: "#a855f7", mul: 5, prob: 6.0 },
+            R: { name:"R (희귀)", color: "#3b82f6", mul: 2, prob: 15.0 },
+            N: { name:"N (일반)", color: "#10b981", mul: 0.5, prob: 35.0 },
+            VOID: { name:"VOID (꽝)", color: "#4b5563", mul: 0, prob: 41.375 }
+        };
+
+        let userCoins = 3000; let totalRolls = 0; let selectedTicketIdx = 0; let isHyperSpeed = false;
+        const canvas = document.getElementById('scratchCanvas'); const ctx = canvas.getContext('2d');
+        let isDrawing = false; let isCleared = false;
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playSound(freq, dur, type='sine') {
+            try {
+                if (audioCtx.state === 'suspended') audioCtx.resume();
+                const osc = audioCtx.createOscillator(); const gain = audioCtx.createGain();
+                osc.type = type; osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                gain.gain.setValueAtTime(0.02, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + dur);
+                osc.connect(gain); gain.connect(audioCtx.destination);
+                osc.start(); osc.stop(audioCtx.currentTime + dur);
+            } catch(e) {}
+        }
+
+        function toggleSpeed() {
+            isHyperSpeed = !isHyperSpeed;
+            const btn = document.getElementById('speedBtn');
+            if(isHyperSpeed) { btn.innerText = "⚡ 배속 모드: FAST"; btn.classList.add('toggle-active'); }
+            else { btn.innerText = "⚡ 배속 모드: OFF"; btn.classList.remove('toggle-active'); }
+        }
+
+        function chargeCoin() { userCoins += 100000; updateUI(); playSound(880, 0.15, 'triangle'); }
+        function updateUI() {
+            document.getElementById('coinCount').innerText = userCoins.toLocaleString();
+            document.getElementById('totalCount').innerText = totalRolls.toLocaleString();
+        }
+
+        function initShopShelf() {
+            const shelf = document.getElementById('shopShelf'); shelf.innerHTML = '';
+            TICKETS_SHOP.forEach((t, idx) => {
+                const card = document.createElement('div');
+                card.className = `shop-card ${idx === selectedTicketIdx ? 'active' : ''}`;
+                card.onclick = () => { selectedTicketIdx = idx; initShopShelf(); playSound(400, 0.05); };
+                if(t.color.includes('gradient')) card.style.background = t.color;
+                else card.style.backgroundColor = t.color;
+                card.innerHTML = `<div style="font-size:0.75rem; font-weight:900;">${t.name}</div><div style="font-size:0.65rem; color:#ffd700;">🪙 ${t.cost.toLocaleString()}</div>`;
+                shelf.appendChild(card);
+            });
+            document.getElementById('b1').innerHTML = `1장 긁기<br><span style="font-size:0.6rem;opacity:0.8;">🪙 ${TICKETS_SHOP[selectedTicketIdx].cost.toLocaleString()}</span>`;
+        }
+
+        function initScratchLayer() {
+            canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight;
+            ctx.fillStyle = '#4b5563'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#1f2937'; ctx.font = 'black 16px sans-serif'; ctx.textAlign = 'center';
+            ctx.fillText('⚡ 여기를 광속으로 긁으세요! ⚡', canvas.width/2, canvas.height/2 + 5);
+            isCleared = false; canvas.style.display = 'block';
+        }
+
+        function getGachaGrade(bonus) {
+            const rand = Math.random() * 100;
+            if(rand <= 0.005 * bonus) return 'SINGULARITY';
+            else if(rand <= 0.02 * bonus) return 'INFINITY';
+            else if(rand <= 0.1 * bonus) return 'MYTH';
+            else if(rand <= 0.5 * bonus) return 'ANCIENT';
+            else if(rand <= 2.0 * bonus) return 'SSR';
+            else if(rand <= 6.0 * bonus) return 'SR';
+            else if(rand <= 15.0) return 'R';
+            else if(rand <= 50.0) return 'N';
+            else return 'VOID';
+        }
+
+        function triggerFeverEffect() {
+            const wrapper = document.getElementById('mainWrapper');
+            wrapper.classList.add('shockwave');
+            playSound(150, 0.4, 'sawtooth');
+            setTimeout(() => playSound(300, 0.3, 'sawtooth'), 80);
+            setTimeout(() => wrapper.classList.remove('shockwave'), 400);
+        }
+
+        function buyTicket(count) {
+            const ticket = TICKETS_SHOP[selectedTicketIdx];
+            const totalCost = ticket.cost * count;
+            if(userCoins < totalCost) { alert("🚨 자산 부족! 긴급 자금 수혈을 받으세요."); return; }
+            
+            userCoins -= totalCost; totalRolls += count; updateUI();
+
+            if(count === 1) {
+                document.getElementById('statsWrapper').style.display = 'none';
+                const grade = getGachaGrade(ticket.bonus);
+                const info = GRADES[grade];
+                const prizeMoney = Math.floor(ticket.cost * info.mul);
+                userCoins += prizeMoney; updateUI();
+
+                const itemRealName = `${PREFIX[Math.floor(Math.random()*PREFIX.length)]} ${MID[Math.floor(Math.random()*MID.length)]} ${SUFFIX[Math.floor(Math.random()*SUFFIX.length)]}`;
+                const resDiv = document.getElementById('cardResult');
+                
+                let isGrad = info.color.includes('gradient');
+                resDiv.innerHTML = `
+                    <p style="font-size:0.7rem; color:#4b5563;">🔮 결과 데이터 연산</p>
+                    <h2 style="font-size:1.25rem; font-weight:900; ${isGrad ? 'background:'+info.color+';-webkit-background-clip:text;-webkit-text-fill-color:transparent;' : 'color:'+info.color}">[${grade}] ${itemRealName}</h2>
+                    <p style="color:#ffd700; font-weight:900; font-size:0.9rem; margin-top:4px;">당첨 환급금: +🪙 ${prizeMoney.toLocaleString()}</p>
+                `;
+
+                // 리얼 도파민 보상 연출 트리거
+                if(grade === 'SINGULARITY' || grade === 'INFINITY' || grade === 'MYTH') {
+                    triggerFeverEffect();
+                    showToast(prizeMoney);
+                } else if (prizeMoney > 0) {
+                    playSound(600, 0.1, 'triangle');
+                }
+                initScratchLayer();
+            } else {
+                canvas.style.display = 'none';
+                document.getElementById('statsWrapper').style.display = 'block';
+                let stats = {}; Object.keys(GRADES).forEach(g => stats[g] = 0);
+                let totalPrize = 0; let highest = 'VOID';
+
+                const delay = isHyperSpeed ? 0 : 2; // 배속 모드 적용 여부
+
+                for(let i=0; i<count; i++) {
+                    let g = getGachaGrade(ticket.bonus); stats[g]++;
+                    totalPrize += Math.floor(ticket.cost * GRADES[g].mul);
+                    if(Object.keys(GRADES).indexOf(g) < Object.keys(GRADES).indexOf(highest)) highest = g;
+                }
+
+                userCoins += totalPrize; updateUI();
+                
+                document.getElementById('statsTitle').innerText = `📊 초고속 복권 전량 분쇄기 (${count}장)`;
+                document.getElementById('topPrize').innerHTML = `최고 획득 등급: <span style="color:${GRADES[highest].color}">${highest}</span><br><span style="color:#ffd700; font-size:0.85rem;">총 환급액: +🪙 ${totalPrize.toLocaleString()}</span>`;
+                
+                const grid = document.getElementById('statsGrid'); grid.innerHTML = '';
+                Object.keys(stats).forEach(g => {
+                    if(stats[g] > 0) {
+                        grid.innerHTML += `<div class="stats-row"><span style="color:${GRADES[g].color.includes('gradient') ? '#ff00ff' : GRADES[g].color}">${g}</span><span>${stats[g]}개</span></div>`;
+                    }
+                });
+
+                if(highest === 'SINGULARITY' || highest === 'INFINITY' || totalPrize > ticket.cost * count * 2) {
+                    triggerFeverEffect();
+                } else {
+                    playSound(200, 0.05);
+                }
+            }
+        }
+
+        function showToast(money) {
+            const toast = document.getElementById('payoutToast');
+            toast.innerText = `🔥 JACKPOT +🪙 ${money.toLocaleString()} 🔥`;
+            toast.style.display = 'block';
+            setTimeout(() => toast.style.display = 'none', 1200);
+        }
+
+        function scratch(e) {
+            if(!isDrawing || isCleared) return;
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            if(!clientX || !clientY) return;
+            const x = clientX - rect.left; const y = clientY - rect.top;
+
+            ctx.globalCompositeOperation = 'destination-out';
+            ctx.beginPath(); ctx.arc(x, y, 26, 0, Math.PI * 2); ctx.fill();
+            if(Math.random() < 0.15) playSound(100 + Math.random()*200, 0.01, 'sawtooth');
+            if(Math.random() < 0.08) checkPercent();
+        }
+
+        function checkPercent() {
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            let pixels = imgData.data; let clear = 0;
+            for (let i = 0; i < pixels.length; i += 64) { if (pixels[i + 3] === 0) clear++; }
+            if (clear / (pixels.length / 64) > 0.45) {
+                isCleared = true; ctx.clearRect(0,0,canvas.width,canvas.height);
+                canvas.style.display = 'none'; playSound(700, 0.1, 'sine');
+            }
+        }
+
+        canvas.addEventListener('mousedown', () => isDrawing = true);
+        canvas.addEventListener('mousemove', scratch);
+        window.addEventListener('mouseup', () => isDrawing = false);
+        canvas.addEventListener('touchstart', (e) => { isDrawing = true; scratch(e); });
+        canvas.addEventListener('touchmove', scratch);
+        window.addEventListener('touchend', () => isDrawing = false);
+
+        initShopShelf(); updateUI();
+    </script>
+</body>
+</html>
